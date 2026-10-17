@@ -17,6 +17,7 @@ LINEグループでポーカーの幹事の輪番通知、開催日登録、リ�
     当日のみ入力リンクを「点数入力はこちら」と別のtextメッセージで送る。
 - `functions/reminder.js`: 通知対象日の判定とメッセージの作成。`SCORE_ENTRY_URL` はここで管理する。
 - `functions/test/reminder.test.js`: 外部通信しないNode.js標準のテスト。
+- `functions/test/webhook.test.js`: テスト用の秘密値で署名検証を確認。Firebaseは置き換え、外部通信はしない。
 - `functions/package.json`: Node.js 22指定、LINE SDK、Firebase Admin/Functionsの依存関係。
 - `.github/workflows/ci-cd.yml`: PRとmasterのCI、CI成功後のmasterの自動デプロイ。
 - `docs/ci-cd.md`: CI/CDの解説と初期設定・運用手順。
