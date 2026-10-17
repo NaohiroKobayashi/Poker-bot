@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Cloud Functions(Admin SDK)からのみアクセス。クライアント直接アクセスは禁止。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
