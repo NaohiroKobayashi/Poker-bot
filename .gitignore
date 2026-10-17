@@ -5,3 +5,4 @@ firebase-debug.*.log
 *.local
 .env
 .claude/settings.local.json
+gha-creds-*.json

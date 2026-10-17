@@ -8,6 +8,19 @@ Codexはこのファイルを開発指示として読み込みます。
 `.claude/settings.local.json` はClaude Code専用のローカル実行許可設定です。
 既存ファイルは残していますが、Gitの管理対象から除外し、Codexへの移植は不要です。
 
+## CI/CDでの開発・本番反映
+
+GitHub Actionsでテストし、`master` に反映した変更をFirebase Functionsへ自動デプロイします。
+基本用語、実装の読み方、初期設定、失敗したときの確認方法は [CI/CDの解説](docs/ci-cd.md) を参照してください。
+
+```powershell
+npm ci --prefix functions
+npm run check --prefix functions
+npm test --prefix functions
+```
+
+Node.js 22を使用します。テストは外部サービスへ接続しません。
+
 ## 全体像
 
 ```
@@ -24,8 +37,16 @@ LINEグループ ⇄ Messaging API ⇄ Cloud Functions (webhook)
 |---|---|
 | 幹事アナウンス | 毎月20日 10:00 に輪番の担当者をメンションし、翌月の日程調整を促す |
 | 開催日登録 | 幹事が `@poker 開催日 8/8` で登録(日程調整はLINE上で人力) |
-| リマインド | 登録された開催日の3日前・前日の朝9時にプッシュ |
-| 点数管理 | 各自が `@poker 1000` で自分の素点を記録、累積ランキング表示(厳密な管理はNotion側) |
+| リマインド | 登録された開催日の3日前・前日・当日の朝9時(日本時間)にプッシュ |
+| 点数入力の案内 | 当日のリマインドに続けて、別メッセージで専用アプリの入力リンクを送信 |
+
+点数の登録・管理は [専用アプリ](https://poker-tracker.1210hatanaka.workers.dev/?openExternalBrowser=1&v=2#/sessions) で行います。過去の得点は登録済みです。
+当日の朝9時は、開催リマインドと次の案内を別々のメッセージ(吹き出し)で送信します。
+
+```text
+点数入力はこちら
+https://poker-tracker.1210hatanaka.workers.dev/?openExternalBrowser=1&v=2#/sessions
+```
 
 ## 1. LINE Developers 側の設定
 
@@ -40,7 +61,7 @@ LINEグループ ⇄ Messaging API ⇄ Cloud Functions (webhook)
 
 ```bash
 # 既存のFirebaseプロジェクトを使う場合はそのプロジェクトで
-firebase init functions   # 言語: JavaScript / Node 20
+firebase init functions   # 言語: JavaScript / Node 22
 # このリポジトリの functions/ を上書きコピー
 
 cd functions && npm install
@@ -74,9 +95,12 @@ BotをLINEグループに招待すると自動でグループIDがFirestoreに�
 - `@poker ヘルプ` … コマンド一覧
 - `@poker 幹事` … 今の担当者と輪番リストを表示
 - `@poker 開催日 8/8` … 開催日を登録 → `@poker 今月` で確認
-- `@poker 1000` … 自分の点数を記録 → `@poker ランキング` で確認
+- 開催当日の通知 … 開催リマインドと点数入力リンクが別メッセージで届くことを確認
 
 ## コマンド一覧
+
+点数入力・結果・ランキングのコマンドは従来機能として残しています。今後の点数登録は上記の専用アプリを利用してください。
+BotのFirestoreと専用アプリ間の自動同期は行いません。
 
 | コマンド | 説明 |
 |---|---|
@@ -90,14 +114,17 @@ BotをLINEグループに招待すると自動でグループIDがFirestoreに�
 | `@poker ランキング` | 累積ランキング表示 |
 | `@poker ヘルプ` | コマンド一覧 |
 
-## カスタマイズ(index.js 冒頭の定数)
+## カスタマイズ
 
 | 定数 | 意味 | デフォルト |
 |---|---|---|
 | `EVENT_TIME` | 開催時刻の表示 | 19:00〜22:00 |
 | `ANNOUNCE_DAY` | 幹事アナウンス日(前月) | 20日 |
+| `SCORE_ENTRY_URL` (`functions/reminder.js`) | 当日朝に案内する専用アプリの点数入力URL | 上記の専用アプリURL |
 
-## 点数データの持ち方
+`EVENT_TIME` と `ANNOUNCE_DAY` は `functions/index.js` 冒頭にあります。
+
+## 従来のBot側の点数データの持ち方
 
 - 記録は `games` コレクションに **1日1人1ドキュメント**(`games/2026-08-08_太郎`)で保存
 - ランキングは表示のたびに `games` 全件を集計して算出(累計キャッシュなし)
@@ -106,8 +133,9 @@ BotをLINEグループに招待すると自動でグループIDがFirestoreに�
 
 ## 注意
 
-- 無料プランのプッシュ通知は月200通まで。この構成の月間送信数は
-  幹事アナウンス1通+リマインド2通程度なので余裕です
+- 月1回開催する場合、幹事アナウンス1回とリマインド3回を送信します。
+  当日分は1回のpushで開催案内と点数入力案内の2メッセージを送ります。
+  利用中のLINE公式アカウントの送信上限とグループの人数に応じて送信数を確認してください。
 - 輪番リストはFirestore(`config/organizers`)に保存され、毎月のアナウンス後に
   自動で次の人へ進みます。順番を変えたいときは `@poker 幹事登録 ...` で再設定
   してください(先頭にリセットされます)

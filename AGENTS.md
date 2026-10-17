@@ -2,8 +2,9 @@
 
 ## プロジェクト
 
-LINEグループでポーカーの成績を記録し、累積ランキングを表示するBot。
-幹事の輪番通知、開催日登録、開催前のリマインドも行う。
+LINEグループでポーカーの幹事の輪番通知、開催日登録、リマインドを行うBot。
+点数管理は外部の専用アプリに移行済み。当日朝は別メッセージで入力リンクを案内する。
+従来のBot側の点数記録・ランキング機能は残っているが、専用アプリとの自動同期はない。
 日程調整自体は人がLINE上で行う。利用者向けの説明は `README.md` を参照する。
 回答、コメント、利用者向けメッセージは既存の日本語に合わせる。
 
@@ -12,8 +13,13 @@ LINEグループでポーカーの成績を記録し、累積ランキングを�
 - `functions/index.js`: 全アプリ実装。CommonJS形式のJavaScript。
   - `webhook`: LINE署名検証、イベント受付、`@poker` コマンド処理。
   - `announceOrganizer`: 毎月20日10時に幹事を通知し、輪番を進める。
-  - `remind`: 毎日9時に開催日の3日前・前日かを判定して通知する。
-- `functions/package.json`: Node.js 20指定、LINE SDK、Firebase Admin/Functionsの依存関係。
+  - `remind`: 毎日9時に開催日の3日前・前日・当日かを判定して通知する。
+    当日のみ入力リンクを「点数入力はこちら」と別のtextメッセージで送る。
+- `functions/reminder.js`: 通知対象日の判定とメッセージの作成。`SCORE_ENTRY_URL` はここで管理する。
+- `functions/test/reminder.test.js`: 外部通信しないNode.js標準のテスト。
+- `functions/package.json`: Node.js 22指定、LINE SDK、Firebase Admin/Functionsの依存関係。
+- `.github/workflows/ci-cd.yml`: PRとmasterのCI、CI成功後のmasterの自動デプロイ。
+- `docs/ci-cd.md`: CI/CDの解説と初期設定・運用手順。
 - `firebase.json`: FunctionsとFirestoreの設定。
 - `firestore.rules`: クライアントの直接読み書きは禁止。FunctionsからAdmin SDKでアクセスする。
 - `firestore.indexes.json`: Firestoreインデックス定義。
@@ -38,17 +44,19 @@ LINEグループでポーカーの成績を記録し、累積ランキングを�
 リポジトリのルートから実行する。
 
 ```powershell
-# 依存関係が必要な作業の前に実行
-npm --prefix functions install
+# lockfileどおりに依存関係をインストール
+npm ci --prefix functions
 
 # 外部サービスに接続せず構文確認
-node --check functions/index.js
+npm run check --prefix functions
+npm test --prefix functions
 
 # Firebase設定JSONの構文確認
 node -e 'const fs = require("fs"); for (const p of ["functions/package.json", "firebase.json", "firestore.indexes.json", ".firebaserc"]) { JSON.parse(fs.readFileSync(p, "utf8")); console.log(p + " OK"); }'
 ```
 
-現時点で自動テスト、lint、buildのスクリプトやEmulator設定はない。
+自動テストは `npm test --prefix functions`、構文確認は `npm run check --prefix functions`。
+lint、buildのスクリプトやEmulator設定はない。
 構文確認だけではLINE/Firebaseの動作確認にはならない。変更した処理の検証方法と、
 実施できなかった確認を報告する。コマンドや仕様を変更したら `README.md` も更新する。
 
@@ -59,7 +67,9 @@ node -e 'const fs = require("fs"); for (const p of ["functions/package.json", "f
 - Webhookの `req.rawBody` によるLINE署名検証を維持する。
 - デプロイ、実グループへの送信、本番Firestoreの更新は実環境に影響する操作として扱う。
   ローカル検証の代わりに実行せず、ユーザーの依頼範囲内で行う。
-- デプロイが依頼された場合は対象プロジェクトを確認し、ルートで
-  `firebase deploy --only functions` を実行する。Firestoreルール等の反映は別途対象を指定する。
+- 本番デプロイは原則としてActions経由。masterへのpushまたはmasterでの手動実行で、
+  CI成功後に `firebase deploy --only functions --project poker-bot-d0190 --non-interactive` を実行する。
+  masterへのpushには本番反映が伴う。Firestoreルール等の反映は別途対象を指定する。
+- Google Cloudの認証はWorkload Identity Federationを使う。サービスアカウントの秘密鍵を作成・保存しない。
 - `.claude/settings.local.json` はClaude Code固有のローカル許可履歴。
   Codexの指示や実行許可の根拠として扱わず、この `AGENTS.md` を開発ガイドとして使う。

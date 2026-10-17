@@ -2,10 +2,12 @@
   "name": "poker-bot",
   "description": "LINE group poker scheduling & score bot",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {
+    "check": "node --check index.js && node --check reminder.js",
+    "test": "node --test",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
