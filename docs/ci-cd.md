@@ -101,6 +101,55 @@ LINEのトークンとシークレットは、引き続き既存のGoogle Secret
 専用サービスアカウント、Workload Identityのプール・プロバイダー、そのアカウントへの権限付与を行い、
 上記のGitHub Variablesを登録します。通常のコード変更時に繰り返す作業ではありません。
 
+### このプロジェクトへの初期設定案
+
+以下は追加予定の設定です。Google Cloudへの適用は、権限範囲を確認して承認した後に行います。
+
+| 対象 | 設定値 |
+|---|---|
+| Google Cloudプロジェクト | `poker-bot-d0190` (番号 `65230704772`) |
+| 新規デプロイ用アカウント | `github-deploy@poker-bot-d0190.iam.gserviceaccount.com` |
+| 新規Workload Identityプール / プロバイダー | `github-actions` / `github` |
+| OIDCの発行元 | `https://token.actions.githubusercontent.com` |
+| 信頼する所有者ID / リポジトリID | `72367261` / `1422936068` (`NaohiroKobayashi/Poker-bot`) |
+| 信頼するブランチとイベント | `refs/heads/master` の `push` と `workflow_dispatch` のみ |
+| 追加で有効化するAPI | `sts.googleapis.com` (一時認証情報の交換用) |
+
+プロバイダーの条件は次のとおりです。名前を他の人が再利用した場合にも同じ権限が渡らないよう、数値IDで制限します。
+
+```text
+assertion.repository_owner_id == '72367261' &&
+assertion.repository_id == '1422936068' &&
+assertion.ref == 'refs/heads/master' &&
+assertion.event_name in ['push', 'workflow_dispatch']
+```
+
+デプロイ用アカウントに、対象プロジェクト内で次のロールを付与する予定です。
+
+| ロール | 用途 |
+|---|---|
+| `roles/cloudfunctions.admin` | Functionsの更新 |
+| `roles/cloudscheduler.admin` | Functionsに付随する定期実行ジョブの更新 |
+| `roles/run.admin` | 第2世代FunctionsのCloud Run設定・呼び出し権限の更新 |
+| `roles/serviceusage.serviceUsageConsumer` | 有効化済みAPIの利用 |
+| `roles/firebase.viewer` | Firebaseプロジェクトの設定確認 |
+| `roles/secretmanager.viewer` | 既存シークレットのメタデータ確認。このロール単体では値は読めない |
+| `roles/artifactregistry.reader` | ビルドイメージ保存先の確認 |
+
+これに加え、以下の2つをリソース単位で設定します。
+
+- デプロイ用アカウント上の `roles/iam.workloadIdentityUser`: 上記リポジトリからだけ、このアカウントとして認証できるようにする。
+- 既存実行アカウント `65230704772-compute@developer.gserviceaccount.com` 上の `roles/iam.serviceAccountUser`: デプロイ用アカウントが、既存の実行・ビルドアカウントを指定できるようにする。
+
+デプロイ用アカウントへOwnerやEditorは追加しません。ただし、管理ロールはこのプロジェクトの
+Functions・Cloud Run・Schedulerを変更できる権限です。さらに既存の実行アカウントには
+`roles/editor` が付いているため、デプロイしたコードはその権限で動きます。
+したがってmasterへの反映は、本番コードと本番で利用するデータに影響し得る操作です。
+実行アカウントの権限見直しは今回のCI/CD導入には含めません。
+
+初期設定は継続的に残りますが、サービスアカウントの秘密鍵は作成しません。
+デプロイ時に不足する権限が見つかった場合は、エラー内容を確認して必要な範囲を検討します。
+
 ## 本番反映の範囲
 
 ```sh
@@ -140,7 +189,8 @@ CI失敗時にはデプロイしません。デプロイ途中の失敗は、一
 publicリポジトリの標準Ubuntuランナーの実行時間は無料です。
 Firebase側のビルド、生成イメージの保存、Functionsなどには別途無料枠と従量料金があります。
 このワークフローではActionsの成果物保存やキャッシュは使いません。
-Firebase側には古いビルドイメージの削除ポリシーを設定し、保存量が増え続けないようにします。
+Firebase側の `asia-northeast1/gcf-artifacts` には、すでに30日後にビルドイメージを削除する
+`firebase-functions-cleanup` ポリシーがあります。この既存設定を継続します。
 
 ## 公式資料
 
