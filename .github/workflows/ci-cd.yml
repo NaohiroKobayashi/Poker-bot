@@ -1,0 +1,62 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --prefix functions
+      - name: Check JavaScript syntax
+        run: npm run check --prefix functions
+      - name: Test reminder messages
+        run: npm test --prefix functions
+
+  deploy:
+    name: Deploy to Firebase
+    needs: test
+    # PRでは実行しない。手動実行もmasterブランチに限定する。
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: firebase-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install dependencies and Firebase CLI
+        run: |
+          npm ci --prefix functions
+          npm install --global firebase-tools@15.15.0
+      # 認証はデプロイ直前に行い、短時間だけ有効な認証情報を使う。
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: poker-bot-d0190
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - name: Deploy Functions
+        run: firebase deploy --only functions --project poker-bot-d0190 --non-interactive

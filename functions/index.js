@@ -2,7 +2,7 @@
  * LINE ポーカー幹事Bot
  * - 毎月: 輪番の幹事をメンションし、日程調整(人力)を促す
  * - 開催日: 幹事が「@poker 開催日 8/8」で登録
- * - リマインド: 開催3日前・前日にプッシュ
+ * - リマインド: 開催3日前・前日・当日にプッシュ。当日は別メッセージで点数入力先を案内
  * - 点数: 「@poker 結果 ...」で記録、「@poker ランキング」で累積表示
  */
 
@@ -11,6 +11,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const line = require("@line/bot-sdk");
+const { buildReminderMessages } = require("./reminder");
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -249,7 +250,7 @@ async function handleText(client, ev) {
         setBy: ev.source.userId || null,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      await reply([{ type: "text", text: `📅 開催日を ${fmtDate(date)} ${EVENT_TIME} に登録しました!\n3日前と前日の朝9時にリマインドします🔔` }]);
+      await reply([{ type: "text", text: `📅 開催日を ${fmtDate(date)} ${EVENT_TIME} に登録しました!\n3日前・前日・当日の朝9時にリマインドします🔔` }]);
       break;
     }
 
@@ -407,7 +408,7 @@ exports.announceOrganizer = onSchedule(
   }
 );
 
-// ===== ③ 毎日9:00 リマインド判定(3日前・前日) =====
+// ===== ③ 毎日9:00 リマインド判定(3日前・前日・当日) =====
 exports.remind = onSchedule(
   {
     schedule: "0 9 * * *",
@@ -424,10 +425,8 @@ exports.remind = onSchedule(
     const diffDays = Math.round(
       (new Date(d + "T00:00:00Z") - new Date(today + "T00:00:00Z")) / 86400000
     );
-    let label = null;
-    if (diffDays === 3) label = "3日後";
-    if (diffDays === 1) label = "明日";
-    if (!label) return;
+    const messages = buildReminderMessages(diffDays, fmtDate(d), EVENT_TIME);
+    if (messages.length === 0) return;
 
     const groupId = await getGroupId();
     if (!groupId) return;
@@ -435,10 +434,7 @@ exports.remind = onSchedule(
     const client = lineClient();
     await client.pushMessage({
       to: groupId,
-      messages: [{
-        type: "text",
-        text: `🔔 リマインド: ${label} ${fmtDate(d)} ${EVENT_TIME} はポーカーです!🃏`,
-      }],
+      messages,
     });
   }
 );
