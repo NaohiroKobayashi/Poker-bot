@@ -25,7 +25,7 @@ jobs:
         run: npm ci --prefix functions
       - name: Check JavaScript syntax
         run: npm run check --prefix functions
-      - name: Test reminder messages
+      - name: Run tests
         run: npm test --prefix functions
 
   deploy:

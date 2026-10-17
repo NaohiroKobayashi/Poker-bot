@@ -127,7 +127,7 @@ exports.webhook = onRequest(
   async (req, res) => {
     // 署名検証
     const signature = req.headers["x-line-signature"];
-    if (!line.validateSignature(req.rawBody, CHANNEL_SECRET.value(), signature)) {
+    if (typeof signature !== "string" || !line.validateSignature(req.rawBody, CHANNEL_SECRET.value(), signature)) {
       res.status(403).send("invalid signature");
       return;
     }

@@ -68,6 +68,11 @@ package.jsonとlockfileが食い違っていると失敗するので、手元と
 - 3日前と前日は、開催リマインドだけの1メッセージになる。
 - 過去や対象外の日は通知しない。
 
+[Webhookのテスト](../functions/test/webhook.test.js)では、署名の欠落・不正な署名を403で拒否し、
+正しい署名の空イベントを200で受け付けることも確認しています。
+本物のLINE SDKで署名を検証し、Firebaseと秘密値をテスト用に置き換えています。
+本番確認で見つかった、署名欠落時に500を返すケースの再発を防ぐテストです。
+
 メッセージ作成を [reminder.js](../functions/reminder.js) に分けており、LINEやFirestoreに接続せずに確認できます。
 そのためテストにLINEのトークンは不要です。実際のLINE配信やFirestoreへの接続まで保証するテストではありません。
 
@@ -113,7 +118,7 @@ LINEのトークンとシークレットは、引き続き既存のGoogle Secret
 | OIDCの発行元 | `https://token.actions.githubusercontent.com` |
 | 信頼する所有者ID / リポジトリID | `72367261` / `1422936068` (`NaohiroKobayashi/Poker-bot`) |
 | 信頼するブランチとイベント | `refs/heads/master` の `push` と `workflow_dispatch` のみ |
-| 追加で有効化したAPI | `sts.googleapis.com` (一時認証情報の交換用) |
+| 追加で有効化したAPI | `sts.googleapis.com` (一時認証情報の交換用)、`cloudbilling.googleapis.com` (既存課金状態の確認用) |
 
 プロバイダーの条件は次のとおりです。名前を他の人が再利用した場合にも同じ権限が渡らないよう、数値IDで制限します。
 
@@ -136,10 +141,11 @@ assertion.event_name in ['push', 'workflow_dispatch']
 | `roles/secretmanager.viewer` | 既存シークレットのメタデータ確認。このロール単体では値は読めない |
 | `roles/artifactregistry.reader` | ビルドイメージ保存先の確認 |
 
-これに加え、以下の2つをリソース単位で設定します。
+これに加え、以下をリソース単位で設定しています。
 
 - デプロイ用アカウント上の `roles/iam.workloadIdentityUser`: 上記リポジトリからだけ、このアカウントとして認証できるようにする。
 - 既存実行アカウント `65230704772-compute@developer.gserviceaccount.com` 上の `roles/iam.serviceAccountUser`: デプロイ用アカウントが、既存の実行・ビルドアカウントを指定できるようにする。
+- 既存App Engineアカウント `poker-bot-d0190@appspot.gserviceaccount.com` 上の `roles/iam.serviceAccountUser`: Firebase CLIの事前確認に必要。追加承認を得て設定した。
 
 デプロイ用アカウントへOwnerやEditorは追加しません。ただし、管理ロールはこのプロジェクトの
 Functions・Cloud Run・Schedulerを変更できる権限です。さらに既存の実行アカウントには
@@ -149,6 +155,38 @@ Functions・Cloud Run・Schedulerを変更できる権限です。さらに既�
 
 初期設定は継続的に残りますが、サービスアカウントの秘密鍵は作成しません。
 デプロイ時に不足する権限が見つかった場合は、エラー内容を確認して必要な範囲を検討します。
+
+### 初回デプロイで必要になった追加設定
+
+2026年10月17日の [初回CD実行](https://github.com/NaohiroKobayashi/Poker-bot/actions/runs/39004493138) では、
+CIとOIDC認証は成功しましたが、Firebase CLIの事前確認が次の権限不足で停止しました。
+
+```text
+iam.serviceAccounts.ActAs on poker-bot-d0190@appspot.gserviceaccount.com
+```
+
+Firebase CLI 15.15.0の `checkServiceAccountIam` は、実際の第2世代Functionsの実行アカウントと別に、
+`${projectId}@appspot.gserviceaccount.com` に対する権限を固定で確認します。
+追加承認を得て適用した設定は次の1件です。
+
+| 項目 | 設定 |
+|---|---|
+| 権限の付与先 | `github-deploy@poker-bot-d0190.iam.gserviceaccount.com` |
+| 対象リソース | 既存の `poker-bot-d0190@appspot.gserviceaccount.com` アカウント1件 |
+| 追加ロール | `roles/iam.serviceAccountUser` |
+
+このApp Engineアカウントにも既存の `roles/editor` が付いています。
+追加設定によりデプロイ用アカウントがこれを実行アカウントとして指定できます。
+この対象への権限追加についても、個別に承認を得てから適用しました。
+プロジェクト全体への `Service Account User` は付与しません。
+この初回実行はデプロイ開始前のチェックで止まっており、本番Functionsのコードは更新していません。
+
+次の実行では、Firebase CLIが既存の課金状態を確認するためのCloud Billing APIが無効だったため停止しました。
+`cloudbilling.googleapis.com` を有効化して対応しています。請求先や料金プランの変更は行っていません。
+
+このような外部設定だけの修正ではコードは変わらないので、Actions画面の **Re-run failed jobs**
+で失敗したデプロイジョブだけを再実行できます。成功済みのテスト結果は同じコミットのものを引き継ぎます。
+コードを修正した場合は、新しいコミットでCIから実行し直します。
 
 ## 本番反映の範囲
 
@@ -176,7 +214,7 @@ Firestoreのデータ、ルール、インデックスはこのワークフロ�
 | 失敗したstep | まず確認すること |
 |---|---|
 | Install dependencies | package.jsonとlockfileの一致、npmの取得エラー |
-| Check JavaScript syntax / Test reminder messages | ログに表示されたファイルやテストを修正し、同じコマンドを手元で実行 |
+| Check JavaScript syntax / Run tests | ログに表示されたファイルやテストを修正し、同じコマンドを手元で実行 |
 | Authenticate to Google Cloud | GitHub Variables、Workload Identityの対象リポジトリ・ブランチ条件 |
 | Deploy Functions | エラーに示されたIAM権限、Google CloudのAPI、本番の課金設定 |
 
