@@ -101,19 +101,19 @@ LINEのトークンとシークレットは、引き続き既存のGoogle Secret
 専用サービスアカウント、Workload Identityのプール・プロバイダー、そのアカウントへの権限付与を行い、
 上記のGitHub Variablesを登録します。通常のコード変更時に繰り返す作業ではありません。
 
-### このプロジェクトへの初期設定案
+### このプロジェクトに適用した初期設定
 
-以下は追加予定の設定です。Google Cloudへの適用は、権限範囲を確認して承認した後に行います。
+以下の設定を、権限範囲への承認を得て2026年10月17日に適用しました。
 
 | 対象 | 設定値 |
 |---|---|
 | Google Cloudプロジェクト | `poker-bot-d0190` (番号 `65230704772`) |
-| 新規デプロイ用アカウント | `github-deploy@poker-bot-d0190.iam.gserviceaccount.com` |
-| 新規Workload Identityプール / プロバイダー | `github-actions` / `github` |
+| デプロイ用アカウント | `github-deploy@poker-bot-d0190.iam.gserviceaccount.com` |
+| Workload Identityプール / プロバイダー | `github-actions` / `github` |
 | OIDCの発行元 | `https://token.actions.githubusercontent.com` |
 | 信頼する所有者ID / リポジトリID | `72367261` / `1422936068` (`NaohiroKobayashi/Poker-bot`) |
 | 信頼するブランチとイベント | `refs/heads/master` の `push` と `workflow_dispatch` のみ |
-| 追加で有効化するAPI | `sts.googleapis.com` (一時認証情報の交換用) |
+| 追加で有効化したAPI | `sts.googleapis.com` (一時認証情報の交換用) |
 
 プロバイダーの条件は次のとおりです。名前を他の人が再利用した場合にも同じ権限が渡らないよう、数値IDで制限します。
 
@@ -124,7 +124,7 @@ assertion.ref == 'refs/heads/master' &&
 assertion.event_name in ['push', 'workflow_dispatch']
 ```
 
-デプロイ用アカウントに、対象プロジェクト内で次のロールを付与する予定です。
+デプロイ用アカウントに、対象プロジェクト内で次のロールを付与しています。
 
 | ロール | 用途 |
 |---|---|
